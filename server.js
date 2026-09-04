@@ -91,6 +91,59 @@ function publicState() {
   };
 }
 
+function idToString(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  return value._serialized || value.id?._serialized || value.id || (value.user && value.server ? `${value.user}@${value.server}` : '') || '';
+}
+
+function groupIdFromChat(chat) {
+  const candidates = [
+    chat?.id,
+    chat?.groupMetadata?.id,
+    chat?.contact?.id,
+    chat?.wid,
+    chat?.chatId
+  ];
+  for (const c of candidates) {
+    const id = idToString(c);
+    if (id.endsWith('@g.us')) return id;
+  }
+  return '';
+}
+
+function groupNameFromChat(chat) {
+  return chat?.name || chat?.formattedTitle || chat?.title || chat?.groupMetadata?.subject || chat?.contact?.formattedName || 'Grupo sem nome';
+}
+
+async function listGroupsRobust(client) {
+  let raw = [];
+  if (typeof client.getAllGroups === 'function') {
+    try { raw = await client.getAllGroups(); } catch (e) { console.warn('getAllGroups falhou:', e.message); }
+  }
+  let groups = Array.isArray(raw) ? raw : [];
+
+  // Fallback importante: algumas versões retornam grupos só pela lista de chats.
+  if (!groups.length && typeof client.getAllChats === 'function') {
+    try {
+      const chats = await client.getAllChats();
+      groups = (Array.isArray(chats) ? chats : []).filter(c => {
+        const id = groupIdFromChat(c);
+        return !!id || c?.isGroup === true || c?.contact?.isGroup === true;
+      });
+    } catch (e) { console.warn('getAllChats falhou:', e.message); }
+  }
+
+  const map = new Map();
+  for (const g of groups) {
+    const id = groupIdFromChat(g);
+    if (!id) continue;
+    const participants = Array.isArray(g?.groupMetadata?.participants) ? g.groupMetadata.participants.length : null;
+    map.set(id, { id, name: groupNameFromChat(g), participants });
+  }
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+}
+
 async function startWhatsApp() {
   if (whatsapp.client || whatsapp.status === 'conectando') return;
   whatsapp.status = 'conectando';
@@ -113,9 +166,7 @@ async function startWhatsApp() {
           whatsapp.connected = true;
           whatsapp.qr = null;
         }
-        if (['notLogged','qrReadFail','disconnectedMobile','deleteToken','browserClose','serverClose','autocloseCalled'].includes(statusSession)) {
-          whatsapp.connected = false;
-        }
+        if (['notLogged','qrReadFail','disconnectedMobile','deleteToken','browserClose','serverClose','autocloseCalled'].includes(statusSession)) whatsapp.connected = false;
       },
       puppeteerOptions: {
         executablePath: process.env.CHROME_PATH || undefined,
@@ -126,7 +177,7 @@ async function startWhatsApp() {
     whatsapp.connected = true;
     whatsapp.status = 'conectado';
     whatsapp.qr = null;
-    client.onStateChange((status) => {
+    if (typeof client.onStateChange === 'function') client.onStateChange((status) => {
       whatsapp.status = status || whatsapp.status;
       if (status === 'CONNECTED') whatsapp.connected = true;
       if (['UNPAIRED','UNPAIRED_IDLE','CONFLICT'].includes(status)) whatsapp.connected = false;
@@ -148,12 +199,11 @@ async function closeWhatsAppClient({ logout = false } = {}) {
   whatsapp.qr = null;
   whatsapp.lastError = null;
   if (!client) return;
-
   if (logout && typeof client.logout === 'function') {
-    try { await client.logout(); } catch (error) { console.warn('Falha ao fazer logout do WhatsApp:', error.message); }
+    try { await client.logout(); } catch (e) { console.warn('Logout falhou:', e.message); }
   }
   if (typeof client.close === 'function') {
-    try { await client.close(); } catch (error) { console.warn('Falha ao fechar cliente WhatsApp:', error.message); }
+    try { await client.close(); } catch (e) { console.warn('Fechamento falhou:', e.message); }
   }
 }
 
@@ -187,34 +237,25 @@ async function runBatch() {
   if (!state.queue.some(x => x.status === 'pending')) { state.running = false; state.nextBatchAt = null; addLog('-', 'done', 'Fila concluída.'); return; }
   const delay = state.intervalMinutes * 60 * 1000;
   state.nextBatchAt = new Date(Date.now() + delay).toISOString();
-  clearTimeout(timer); timer = setTimeout(runBatch, delay);
+  clearTimeout(timer);
+  timer = setTimeout(runBatch, delay);
 }
 
 app.get('/api/status', (_req, res) => res.json(publicState()));
 
 app.post('/api/whatsapp/reconnect', async (_req, res) => {
   if (state.running) return res.status(409).json({ error: 'Pause ou cancele o envio antes de reconectar o WhatsApp.' });
-  try {
-    whatsapp.status = 'reiniciando';
-    await closeWhatsAppClient({ logout: false });
-    whatsapp.status = 'reiniciando';
-    setTimeout(startWhatsApp, 500);
-    res.json({ ok: true, state: publicState() });
-  } catch (error) {
-    res.status(500).json({ error: `Não consegui reconectar: ${error.message}` });
-  }
+  await closeWhatsAppClient({ logout: false });
+  whatsapp.status = 'reiniciando';
+  setTimeout(startWhatsApp, 500);
+  res.json({ ok: true, state: publicState() });
 });
 
 app.post('/api/whatsapp/disconnect', async (_req, res) => {
   if (state.running) return res.status(409).json({ error: 'Pause ou cancele o envio antes de desconectar o WhatsApp.' });
-  try {
-    whatsapp.status = 'desconectado';
-    await closeWhatsAppClient({ logout: false });
-    whatsapp.status = 'desconectado';
-    res.json({ ok: true, state: publicState() });
-  } catch (error) {
-    res.status(500).json({ error: `Não consegui desconectar: ${error.message}` });
-  }
+  await closeWhatsAppClient({ logout: false });
+  whatsapp.status = 'desconectado';
+  res.json({ ok: true, state: publicState() });
 });
 
 app.post('/api/whatsapp/change-number', async (_req, res) => {
@@ -227,8 +268,7 @@ app.post('/api/whatsapp/change-number', async (_req, res) => {
     setTimeout(startWhatsApp, 800);
     res.json({ ok: true, state: publicState() });
   } catch (error) {
-    whatsapp.status = 'erro';
-    whatsapp.lastError = error.message;
+    whatsapp.status = 'erro'; whatsapp.lastError = error.message;
     res.status(500).json({ error: `Não consegui trocar o número: ${error.message}` });
   }
 });
@@ -236,15 +276,11 @@ app.post('/api/whatsapp/change-number', async (_req, res) => {
 app.get('/api/groups', async (_req, res) => {
   try {
     if (!whatsapp.client || !whatsapp.connected) return res.status(400).json({ error: 'Conecte o WhatsApp primeiro.' });
-    const groups = await whatsapp.client.getAllGroups();
-    const compact = (groups || []).map(g => ({
-      id: g?.id?._serialized || g?.id || g?.groupMetadata?.id?._serialized || '',
-      name: g?.name || g?.formattedTitle || g?.groupMetadata?.subject || 'Grupo sem nome',
-      participants: Array.isArray(g?.groupMetadata?.participants) ? g.groupMetadata.participants.length : null
-    })).filter(g => String(g.id).includes('@g.us'));
-    compact.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-    res.json({ ok: true, groups: compact });
+    const groups = await listGroupsRobust(whatsapp.client);
+    console.log(`Grupos encontrados: ${groups.length}`);
+    res.json({ ok: true, groups });
   } catch (error) {
+    console.error('Erro ao listar grupos:', error);
     res.status(500).json({ error: `Não consegui listar os grupos: ${error.message}` });
   }
 });
@@ -256,29 +292,24 @@ app.post('/api/groups/import', async (req, res) => {
     if (!groupId.endsWith('@g.us')) return res.status(400).json({ error: 'Selecione um grupo válido.' });
 
     let members = [];
-    if (typeof whatsapp.client.getGroupMembersIds === 'function') {
-      members = await whatsapp.client.getGroupMembersIds(groupId);
-    } else if (typeof whatsapp.client.getGroupMembers === 'function') {
-      members = await whatsapp.client.getGroupMembers(groupId);
-    } else {
-      throw new Error('Esta versão do WPPConnect não expõe leitura de participantes.');
-    }
+    if (typeof whatsapp.client.getGroupMembersIds === 'function') members = await whatsapp.client.getGroupMembersIds(groupId);
+    else if (typeof whatsapp.client.getGroupMembers === 'function') members = await whatsapp.client.getGroupMembers(groupId);
+    else throw new Error('Esta versão do WPPConnect não expõe leitura de participantes.');
 
-    const seen = new Set();
-    const valid = [];
+    const seen = new Set(), valid = [];
     let invalid = 0, duplicates = 0;
     for (const member of members || []) {
-      const raw = member?._serialized || member?.id?._serialized || member?.id || member?.user || member;
+      const raw = idToString(member?.id || member) || member?.user || '';
       const phone = normalizeBrazilPhone(raw);
       if (!phone) { invalid++; continue; }
       if (seen.has(phone)) { duplicates++; continue; }
       seen.add(phone); valid.push(phone);
     }
-
     if (!valid.length) return res.status(400).json({ error: 'Não encontrei telefones brasileiros válidos nesse grupo.' });
     resetContacts(valid, { type: 'group', groupId });
     res.json({ ok: true, valid: valid.length, invalid, duplicates, preview: valid.slice(0, 8), state: publicState() });
   } catch (error) {
+    console.error('Erro ao importar participantes:', error);
     res.status(500).json({ error: `Não consegui importar os participantes: ${error.message}` });
   }
 });
