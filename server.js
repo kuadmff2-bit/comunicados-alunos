@@ -14,18 +14,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 const state = {
   contacts: [], queue: [], running: false, paused: false, cancelled: false,
   batchSize: 5, intervalMinutes: 10, message: '', sent: 0, failed: 0,
-  startedAt: null, nextBatchAt: null, log: []
+  startedAt: null, nextBatchAt: null, log: [], contactSource: null
 };
 let timer = null;
 
-const whatsapp = {
-  client: null,
-  connected: false,
-  status: 'iniciando',
-  qr: null,
-  lastError: null
-};
-
+const whatsapp = { client: null, connected: false, status: 'iniciando', qr: null, lastError: null };
 const tokenDir = process.env.WPP_TOKEN_DIR || path.join(process.cwd(), 'tokens');
 fs.mkdirSync(tokenDir, { recursive: true });
 
@@ -61,6 +54,19 @@ function detectPhoneColumn(rows) {
   return bestScore ? best : null;
 }
 
+function resetContacts(valid, source) {
+  state.contacts = valid;
+  state.contactSource = source;
+  state.queue = [];
+  state.sent = 0;
+  state.failed = 0;
+  state.log = [];
+  state.running = false;
+  state.paused = false;
+  state.cancelled = false;
+  clearTimeout(timer);
+}
+
 function addLog(phone, status, detail) {
   state.log.push({ time: new Date().toISOString(), phone, status, detail });
   if (state.log.length > 1000) state.log = state.log.slice(-1000);
@@ -69,6 +75,7 @@ function addLog(phone, status, detail) {
 function publicState() {
   return {
     contacts: state.contacts.length,
+    contactSource: state.contactSource,
     queued: state.queue.filter(x => x.status === 'pending').length,
     sent: state.sent,
     failed: state.failed,
@@ -80,12 +87,7 @@ function publicState() {
     startedAt: state.startedAt,
     nextBatchAt: state.nextBatchAt,
     log: state.log.slice(-100).reverse(),
-    whatsapp: {
-      connected: whatsapp.connected,
-      status: whatsapp.status,
-      qr: whatsapp.qr,
-      lastError: whatsapp.lastError
-    }
+    whatsapp: { connected: whatsapp.connected, status: whatsapp.status, qr: whatsapp.qr, lastError: whatsapp.lastError }
   };
 }
 
@@ -147,9 +149,7 @@ async function sendWhatsAppText(phone, message) {
 async function runBatch() {
   if (!state.running || state.paused || state.cancelled) return;
   const pending = state.queue.filter(x => x.status === 'pending').slice(0, state.batchSize);
-  if (!pending.length) {
-    state.running = false; state.nextBatchAt = null; addLog('-', 'done', 'Fila concluída.'); return;
-  }
+  if (!pending.length) { state.running = false; state.nextBatchAt = null; addLog('-', 'done', 'Fila concluída.'); return; }
   for (const item of pending) {
     if (state.paused || state.cancelled) break;
     item.status = 'sending';
@@ -163,9 +163,7 @@ async function runBatch() {
     }
   }
   if (state.cancelled || state.paused || !state.running) return;
-  if (!state.queue.some(x => x.status === 'pending')) {
-    state.running = false; state.nextBatchAt = null; addLog('-', 'done', 'Fila concluída.'); return;
-  }
+  if (!state.queue.some(x => x.status === 'pending')) { state.running = false; state.nextBatchAt = null; addLog('-', 'done', 'Fila concluída.'); return; }
   const delay = state.intervalMinutes * 60 * 1000;
   state.nextBatchAt = new Date(Date.now() + delay).toISOString();
   clearTimeout(timer); timer = setTimeout(runBatch, delay);
@@ -176,6 +174,56 @@ app.post('/api/whatsapp/reconnect', async (_req, res) => {
   whatsapp.client = null; whatsapp.connected = false; whatsapp.qr = null; whatsapp.status = 'reiniciando';
   startWhatsApp();
   res.json({ ok: true, state: publicState() });
+});
+
+app.get('/api/groups', async (_req, res) => {
+  try {
+    if (!whatsapp.client || !whatsapp.connected) return res.status(400).json({ error: 'Conecte o WhatsApp primeiro.' });
+    const groups = await whatsapp.client.getAllGroups();
+    const compact = (groups || []).map(g => ({
+      id: g?.id?._serialized || g?.id || g?.groupMetadata?.id?._serialized || '',
+      name: g?.name || g?.formattedTitle || g?.groupMetadata?.subject || 'Grupo sem nome',
+      participants: Array.isArray(g?.groupMetadata?.participants) ? g.groupMetadata.participants.length : null
+    })).filter(g => String(g.id).includes('@g.us'));
+    compact.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    res.json({ ok: true, groups: compact });
+  } catch (error) {
+    res.status(500).json({ error: `Não consegui listar os grupos: ${error.message}` });
+  }
+});
+
+app.post('/api/groups/import', async (req, res) => {
+  try {
+    if (!whatsapp.client || !whatsapp.connected) return res.status(400).json({ error: 'Conecte o WhatsApp primeiro.' });
+    const groupId = String(req.body.groupId || '').trim();
+    if (!groupId.endsWith('@g.us')) return res.status(400).json({ error: 'Selecione um grupo válido.' });
+
+    let members = [];
+    if (typeof whatsapp.client.getGroupMembersIds === 'function') {
+      members = await whatsapp.client.getGroupMembersIds(groupId);
+    } else if (typeof whatsapp.client.getGroupMembers === 'function') {
+      members = await whatsapp.client.getGroupMembers(groupId);
+    } else {
+      throw new Error('Esta versão do WPPConnect não expõe leitura de participantes.');
+    }
+
+    const seen = new Set();
+    const valid = [];
+    let invalid = 0, duplicates = 0;
+    for (const member of members || []) {
+      const raw = member?._serialized || member?.id?._serialized || member?.id || member?.user || member;
+      const phone = normalizeBrazilPhone(raw);
+      if (!phone) { invalid++; continue; }
+      if (seen.has(phone)) { duplicates++; continue; }
+      seen.add(phone); valid.push(phone);
+    }
+
+    if (!valid.length) return res.status(400).json({ error: 'Não encontrei telefones brasileiros válidos nesse grupo.' });
+    resetContacts(valid, { type: 'group', groupId });
+    res.json({ ok: true, valid: valid.length, invalid, duplicates, preview: valid.slice(0, 8), state: publicState() });
+  } catch (error) {
+    res.status(500).json({ error: `Não consegui importar os participantes: ${error.message}` });
+  }
 });
 
 app.post('/api/import', upload.single('file'), (req, res) => {
@@ -194,8 +242,7 @@ app.post('/api/import', upload.single('file'), (req, res) => {
       if (seen.has(phone)) { duplicates++; continue; }
       seen.add(phone); valid.push(phone);
     }
-    state.contacts = valid; state.queue = []; state.sent = 0; state.failed = 0; state.log = [];
-    state.running = false; state.paused = false; state.cancelled = false; clearTimeout(timer);
+    resetContacts(valid, { type: 'spreadsheet', file: req.file.originalname });
     res.json({ ok: true, phoneColumn, totalRows: rows.length, valid: valid.length, invalid, duplicates, preview: valid.slice(0, 8) });
   } catch (error) { res.status(400).json({ error: `Não foi possível ler a planilha: ${error.message}` }); }
 });
@@ -205,7 +252,7 @@ app.post('/api/start', (req, res) => {
   const batchSize = Math.max(1, Math.min(20, Number(req.body.batchSize) || 5));
   const intervalMinutes = Math.max(1, Math.min(1440, Number(req.body.intervalMinutes) || 10));
   if (!whatsapp.connected) return res.status(400).json({ error: 'Conecte o WhatsApp pelo QR Code antes de iniciar.' });
-  if (!state.contacts.length) return res.status(400).json({ error: 'Importe uma planilha primeiro.' });
+  if (!state.contacts.length) return res.status(400).json({ error: 'Importe contatos primeiro.' });
   if (!message) return res.status(400).json({ error: 'Escreva a mensagem.' });
   if (state.running) return res.status(409).json({ error: 'Já existe um envio em andamento.' });
   state.message = message; state.batchSize = batchSize; state.intervalMinutes = intervalMinutes;
