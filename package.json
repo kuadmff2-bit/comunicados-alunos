@@ -1,21 +1,21 @@
 {
   "name": "comunicados-alunos",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Central de comunicados para alunos com fila controlada de envios via WhatsApp",
+  "description": "Central separada de comunicados para alunos via WhatsApp com fila controlada",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=20" },
   "dependencies": {
-    "axios": "^1.11.0",
+    "@wppconnect-team/wppconnect": "2.3.1",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "multer": "^2.0.2",
+    "puppeteer": "24.43.1",
+    "puppeteer-core": "24.43.1",
     "xlsx": "^0.18.5"
   }
 }
