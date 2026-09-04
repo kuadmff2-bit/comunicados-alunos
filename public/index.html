@@ -12,10 +12,24 @@
       <div>
         <span class="eyebrow">Central de WhatsApp</span>
         <h1>Comunicados Alunos</h1>
-        <p>Importe uma planilha, escreva o aviso e envie em lotes controlados.</p>
+        <p>Conecte o WhatsApp, importe a planilha e envie os avisos em lotes controlados.</p>
       </div>
-      <div id="modeBadge" class="badge">Modo de teste</div>
+      <div id="modeBadge" class="badge">WhatsApp desconectado</div>
     </header>
+
+    <section class="card action-card">
+      <div>
+        <h2>Conexão do WhatsApp</h2>
+        <p id="waStatus" class="muted">Iniciando conexão...</p>
+        <div id="qrWrap" class="hidden" style="margin-top:16px">
+          <img id="qrImage" alt="QR Code do WhatsApp" style="max-width:280px;width:100%;border-radius:16px;background:white;padding:12px" />
+          <p class="muted">No celular: WhatsApp → Dispositivos conectados → Conectar um dispositivo.</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="reconnectBtn" class="button secondary">Gerar novo QR</button>
+      </div>
+    </section>
 
     <section class="grid">
       <article class="card">
@@ -51,7 +65,7 @@
             <input id="intervalMinutes" type="number" min="1" max="1440" value="10" />
           </label>
         </div>
-        <p class="muted">Padrão: 5 mensagens a cada 10 minutos.</p>
+        <p class="muted">Padrão: 5 mensagens a cada 10 minutos. Use apenas contatos autorizados.</p>
       </article>
     </section>
 
@@ -85,12 +99,8 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr><th>Horário</th><th>Telefone</th><th>Status</th><th>Detalhe</th></tr>
-          </thead>
-          <tbody id="logBody">
-            <tr><td colspan="4" class="empty">Nenhum envio iniciado.</td></tr>
-          </tbody>
+          <thead><tr><th>Horário</th><th>Telefone</th><th>Status</th><th>Detalhe</th></tr></thead>
+          <tbody id="logBody"><tr><td colspan="4" class="empty">Nenhum envio iniciado.</td></tr></tbody>
         </table>
       </div>
     </section>
