@@ -1,12 +1,12 @@
 {
   "name": "comunicados-alunos",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Central separada de comunicados para alunos via WhatsApp com fila controlada",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node -r ./wpp-patch.js server.js",
+    "dev": "node --watch -r ./wpp-patch.js server.js"
   },
   "engines": { "node": ">=20" },
   "dependencies": {
