@@ -15,8 +15,14 @@ function fmtTime(iso){if(!iso)return '—';return new Date(iso).toLocaleTimeStri
 function renderState(state){
   $('contactsStat').textContent=state.contacts||0; $('queuedStat').textContent=state.queued||0; $('sentStat').textContent=state.sent||0; $('failedStat').textContent=state.failed||0;
   const wa=state.whatsapp||{};
-  if(wa.connected){modeBadge.textContent='WhatsApp conectado';modeBadge.classList.add('live');waStatus.textContent='✅ Conectado e pronto para enviar.';qrWrap.classList.add('hidden')}
-  else {modeBadge.textContent='WhatsApp desconectado';modeBadge.classList.remove('live');waStatus.textContent=wa.lastError?`Erro: ${wa.lastError}`:`Status: ${wa.status||'iniciando'}`;if(wa.qr){qrImage.src=wa.qr;qrWrap.classList.remove('hidden')}else qrWrap.classList.add('hidden')}
+  if(wa.ready){
+    modeBadge.textContent='WhatsApp pronto';modeBadge.classList.add('live');waStatus.textContent='✅ Conectado, sincronizado e pronto para enviar.';qrWrap.classList.add('hidden');
+  } else if(wa.connected){
+    modeBadge.textContent='WhatsApp sincronizando';modeBadge.classList.remove('live');waStatus.textContent=wa.lastError?`Sincronizando: ${wa.lastError}`:'⏳ WhatsApp conectado. Carregando conversas e grupos...';qrWrap.classList.add('hidden');
+  } else {
+    modeBadge.textContent='WhatsApp desconectado';modeBadge.classList.remove('live');waStatus.textContent=wa.lastError?`Erro: ${wa.lastError}`:`Status: ${wa.status||'iniciando'}`;
+    if(wa.qr){qrImage.src=wa.qr;qrWrap.classList.remove('hidden')}else qrWrap.classList.add('hidden');
+  }
 
   if(state.running&&state.paused) statusText.textContent=`Pausado — ${state.sent} enviados e ${state.queued} pendentes.`;
   else if(state.running) statusText.textContent=state.nextBatchAt?`Em andamento — próximo lote às ${fmtTime(state.nextBatchAt)}.`:'Enviando lote agora...';
@@ -27,12 +33,13 @@ function renderState(state){
     statusText.textContent=`${state.contacts} contatos prontos para envio (${origem}).`;
   } else statusText.textContent='Aguardando contatos.';
 
-  startBtn.disabled=state.running||!state.contacts||!wa.connected; pauseBtn.disabled=!state.running||state.paused; resumeBtn.disabled=!state.running||!state.paused; cancelBtn.disabled=!state.running;
+  startBtn.disabled=state.running||!state.contacts||!wa.ready;
+  pauseBtn.disabled=!state.running||state.paused; resumeBtn.disabled=!state.running||!state.paused; cancelBtn.disabled=!state.running;
   reconnectBtn.disabled=state.running;
   disconnectBtn.disabled=state.running||!wa.connected;
   changeNumberBtn.disabled=state.running;
-  loadGroupsBtn.disabled=!wa.connected;
-  importGroupBtn.disabled=!wa.connected||!groupSelect.value;
+  loadGroupsBtn.disabled=!wa.ready;
+  importGroupBtn.disabled=!wa.ready||!groupSelect.value;
 
   if(!state.log?.length){logBody.innerHTML='<tr><td colspan="4" class="empty">Nenhum envio iniciado.</td></tr>';return}
   logBody.innerHTML=state.log.map(i=>`<tr><td>${escapeHtml(fmtTime(i.time))}</td><td>${escapeHtml(maskPhone(i.phone))}</td><td class="status-${escapeHtml(i.status)}">${escapeHtml(i.status)}</td><td>${escapeHtml(i.detail)}</td></tr>`).join('');
@@ -71,10 +78,10 @@ changeNumberBtn.addEventListener('click',async()=>{
 });
 
 loadGroupsBtn.addEventListener('click',async()=>{
-  loadGroupsBtn.disabled=true; loadGroupsBtn.textContent='Carregando...'; groupSelect.innerHTML='<option value="">Carregando grupos...</option>';
+  loadGroupsBtn.disabled=true; loadGroupsBtn.textContent='Carregando...'; groupSelect.innerHTML='<option value="">Lendo grupos da memória do WhatsApp...</option>';
   try{
     const d=await api('/api/groups');
-    if(!d.groups?.length){groupSelect.innerHTML='<option value="">Nenhum grupo encontrado</option>';groupNotify('Nenhum grupo disponível neste WhatsApp.','error');return}
+    if(!d.groups?.length){groupSelect.innerHTML='<option value="">Nenhum grupo encontrado</option>';groupNotify('A sessão está pronta, mas nenhum grupo apareceu na memória do WhatsApp.','error');return}
     groupSelect.innerHTML='<option value="">Selecione um grupo</option>'+d.groups.map(g=>`<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}${g.participants!=null?` (${g.participants})`:''}</option>`).join('');
     groupNotify(`${d.groups.length} grupo(s) encontrado(s). Escolha um e importe os participantes.`);
   }catch(e){groupSelect.innerHTML='<option value="">Não foi possível carregar</option>';groupNotify(e.message,'error')}
