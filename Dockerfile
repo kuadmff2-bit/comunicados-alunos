@@ -13,6 +13,7 @@ RUN apt-get update \
       fonts-liberation \
       fonts-noto-color-emoji \
       tzdata \
+      findutils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -20,4 +21,7 @@ COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
 COPY . .
 RUN mkdir -p /app/tokens
-CMD ["npm", "start"]
+
+# O volume persistente pode guardar locks do Chromium de um container antigo.
+# Removemos apenas os arquivos Singleton* antes de subir o robô; os tokens do WhatsApp permanecem intactos.
+CMD ["sh", "-c", "TOKEN_DIR=${WPP_TOKEN_DIR:-/app/tokens}; mkdir -p \"$TOKEN_DIR\"; find \"$TOKEN_DIR\" -type f \\( -name 'SingletonLock' -o -name 'SingletonCookie' -o -name 'SingletonSocket' \\) -delete 2>/dev/null || true; find \"$TOKEN_DIR\" -type l \\( -name 'SingletonLock' -o -name 'SingletonCookie' -o -name 'SingletonSocket' \\) -delete 2>/dev/null || true; npm start"]
