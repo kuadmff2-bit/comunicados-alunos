@@ -141,6 +141,27 @@ async function startWhatsApp() {
   }
 }
 
+async function closeWhatsAppClient({ logout = false } = {}) {
+  const client = whatsapp.client;
+  whatsapp.client = null;
+  whatsapp.connected = false;
+  whatsapp.qr = null;
+  whatsapp.lastError = null;
+  if (!client) return;
+
+  if (logout && typeof client.logout === 'function') {
+    try { await client.logout(); } catch (error) { console.warn('Falha ao fazer logout do WhatsApp:', error.message); }
+  }
+  if (typeof client.close === 'function') {
+    try { await client.close(); } catch (error) { console.warn('Falha ao fechar cliente WhatsApp:', error.message); }
+  }
+}
+
+function clearWhatsAppTokens() {
+  fs.rmSync(tokenDir, { recursive: true, force: true });
+  fs.mkdirSync(tokenDir, { recursive: true });
+}
+
 async function sendWhatsAppText(phone, message) {
   if (!whatsapp.client || !whatsapp.connected) throw new Error('WhatsApp não está conectado. Leia o QR Code primeiro.');
   return whatsapp.client.sendText(`${phone}@c.us`, message);
@@ -170,10 +191,46 @@ async function runBatch() {
 }
 
 app.get('/api/status', (_req, res) => res.json(publicState()));
+
 app.post('/api/whatsapp/reconnect', async (_req, res) => {
-  whatsapp.client = null; whatsapp.connected = false; whatsapp.qr = null; whatsapp.status = 'reiniciando';
-  startWhatsApp();
-  res.json({ ok: true, state: publicState() });
+  if (state.running) return res.status(409).json({ error: 'Pause ou cancele o envio antes de reconectar o WhatsApp.' });
+  try {
+    whatsapp.status = 'reiniciando';
+    await closeWhatsAppClient({ logout: false });
+    whatsapp.status = 'reiniciando';
+    setTimeout(startWhatsApp, 500);
+    res.json({ ok: true, state: publicState() });
+  } catch (error) {
+    res.status(500).json({ error: `Não consegui reconectar: ${error.message}` });
+  }
+});
+
+app.post('/api/whatsapp/disconnect', async (_req, res) => {
+  if (state.running) return res.status(409).json({ error: 'Pause ou cancele o envio antes de desconectar o WhatsApp.' });
+  try {
+    whatsapp.status = 'desconectado';
+    await closeWhatsAppClient({ logout: false });
+    whatsapp.status = 'desconectado';
+    res.json({ ok: true, state: publicState() });
+  } catch (error) {
+    res.status(500).json({ error: `Não consegui desconectar: ${error.message}` });
+  }
+});
+
+app.post('/api/whatsapp/change-number', async (_req, res) => {
+  if (state.running) return res.status(409).json({ error: 'Pause ou cancele o envio antes de trocar o número.' });
+  try {
+    whatsapp.status = 'trocando_numero';
+    await closeWhatsAppClient({ logout: true });
+    clearWhatsAppTokens();
+    whatsapp.status = 'gerando_novo_qr';
+    setTimeout(startWhatsApp, 800);
+    res.json({ ok: true, state: publicState() });
+  } catch (error) {
+    whatsapp.status = 'erro';
+    whatsapp.lastError = error.message;
+    res.status(500).json({ error: `Não consegui trocar o número: ${error.message}` });
+  }
 });
 
 app.get('/api/groups', async (_req, res) => {
