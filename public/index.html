@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Comunicados Alunos</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <span class="eyebrow">Central de WhatsApp</span>
+        <h1>Comunicados Alunos</h1>
+        <p>Importe uma planilha, escreva o aviso e envie em lotes controlados.</p>
+      </div>
+      <div id="modeBadge" class="badge">Modo de teste</div>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <div class="step">1</div>
+        <h2>Importar contatos</h2>
+        <p class="muted">Aceita Excel ou CSV. A coluna pode se chamar telefone, celular, WhatsApp ou similar.</p>
+        <label class="file-drop">
+          <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" />
+          <strong>Selecionar planilha</strong>
+          <span>Até 5 MB</span>
+        </label>
+        <button id="importBtn" class="button secondary">Importar planilha</button>
+        <div id="importResult" class="result hidden"></div>
+      </article>
+
+      <article class="card">
+        <div class="step">2</div>
+        <h2>Mensagem</h2>
+        <textarea id="message" maxlength="4096" placeholder="Digite o comunicado que será enviado aos alunos..."></textarea>
+        <div class="counter"><span id="charCount">0</span>/4096</div>
+      </article>
+
+      <article class="card">
+        <div class="step">3</div>
+        <h2>Ritmo de envio</h2>
+        <div class="two-cols">
+          <label>
+            <span>Mensagens por lote</span>
+            <input id="batchSize" type="number" min="1" max="20" value="5" />
+          </label>
+          <label>
+            <span>Intervalo em minutos</span>
+            <input id="intervalMinutes" type="number" min="1" max="1440" value="10" />
+          </label>
+        </div>
+        <p class="muted">Padrão: 5 mensagens a cada 10 minutos.</p>
+      </article>
+    </section>
+
+    <section class="card action-card">
+      <div>
+        <h2>Controle do envio</h2>
+        <p id="statusText" class="muted">Aguardando planilha.</p>
+      </div>
+      <div class="actions">
+        <button id="startBtn" class="button primary">Iniciar envio</button>
+        <button id="pauseBtn" class="button secondary">Pausar</button>
+        <button id="resumeBtn" class="button secondary">Continuar</button>
+        <button id="cancelBtn" class="button danger">Cancelar</button>
+      </div>
+    </section>
+
+    <section class="stats">
+      <div class="stat"><span>Contatos</span><strong id="contactsStat">0</strong></div>
+      <div class="stat"><span>Pendentes</span><strong id="queuedStat">0</strong></div>
+      <div class="stat success"><span>Enviados</span><strong id="sentStat">0</strong></div>
+      <div class="stat fail"><span>Falhas</span><strong id="failedStat">0</strong></div>
+    </section>
+
+    <section class="card">
+      <div class="table-head">
+        <div>
+          <h2>Histórico</h2>
+          <p class="muted">Os eventos mais recentes aparecem primeiro.</p>
+        </div>
+        <a id="exportBtn" class="button secondary link-button" href="/api/export">Baixar relatório</a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Horário</th><th>Telefone</th><th>Status</th><th>Detalhe</th></tr>
+          </thead>
+          <tbody id="logBody">
+            <tr><td colspan="4" class="empty">Nenhum envio iniciado.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
