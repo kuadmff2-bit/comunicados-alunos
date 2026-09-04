@@ -12,7 +12,7 @@
       <div>
         <span class="eyebrow">Central de WhatsApp</span>
         <h1>Comunicados Alunos</h1>
-        <p>Conecte o WhatsApp, importe a planilha e envie os avisos em lotes controlados.</p>
+        <p>Conecte o WhatsApp, importe contatos por planilha ou grupo e envie os avisos em lotes controlados.</p>
       </div>
       <div id="modeBadge" class="badge">WhatsApp desconectado</div>
     </header>
@@ -33,8 +33,8 @@
 
     <section class="grid">
       <article class="card">
-        <div class="step">1</div>
-        <h2>Importar contatos</h2>
+        <div class="step">1A</div>
+        <h2>Importar planilha</h2>
         <p class="muted">Aceita Excel ou CSV. A coluna pode se chamar telefone, celular, WhatsApp ou similar.</p>
         <label class="file-drop">
           <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" />
@@ -43,6 +43,23 @@
         </label>
         <button id="importBtn" class="button secondary">Importar planilha</button>
         <div id="importResult" class="result hidden"></div>
+      </article>
+
+      <article class="card">
+        <div class="step">1B</div>
+        <h2>Importar de grupo</h2>
+        <p class="muted">Lista os grupos do WhatsApp conectado e importa os participantes disponíveis.</p>
+        <label>
+          <span>Grupo</span>
+          <select id="groupSelect">
+            <option value="">Conecte o WhatsApp e carregue os grupos</option>
+          </select>
+        </label>
+        <div class="actions" style="margin-top:12px">
+          <button id="loadGroupsBtn" class="button secondary">Carregar grupos</button>
+          <button id="importGroupBtn" class="button primary">Importar participantes</button>
+        </div>
+        <div id="groupResult" class="result hidden"></div>
       </article>
 
       <article class="card">
@@ -72,7 +89,7 @@
     <section class="card action-card">
       <div>
         <h2>Controle do envio</h2>
-        <p id="statusText" class="muted">Aguardando planilha.</p>
+        <p id="statusText" class="muted">Aguardando contatos.</p>
       </div>
       <div class="actions">
         <button id="startBtn" class="button primary">Iniciar envio</button>
