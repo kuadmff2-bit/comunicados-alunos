@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 const fileInput=$('fileInput'), importBtn=$('importBtn'), importResult=$('importResult'), message=$('message'), charCount=$('charCount');
 const batchSize=$('batchSize'), intervalMinutes=$('intervalMinutes'), startBtn=$('startBtn'), pauseBtn=$('pauseBtn'), resumeBtn=$('resumeBtn'), cancelBtn=$('cancelBtn');
 const statusText=$('statusText'), modeBadge=$('modeBadge'), logBody=$('logBody'), waStatus=$('waStatus'), qrWrap=$('qrWrap'), qrImage=$('qrImage'), reconnectBtn=$('reconnectBtn');
+const disconnectBtn=$('disconnectBtn'), changeNumberBtn=$('changeNumberBtn');
 const groupSelect=$('groupSelect'), loadGroupsBtn=$('loadGroupsBtn'), importGroupBtn=$('importGroupBtn'), groupResult=$('groupResult');
 
 function escapeHtml(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
@@ -27,6 +28,9 @@ function renderState(state){
   } else statusText.textContent='Aguardando contatos.';
 
   startBtn.disabled=state.running||!state.contacts||!wa.connected; pauseBtn.disabled=!state.running||state.paused; resumeBtn.disabled=!state.running||!state.paused; cancelBtn.disabled=!state.running;
+  reconnectBtn.disabled=state.running;
+  disconnectBtn.disabled=state.running||!wa.connected;
+  changeNumberBtn.disabled=state.running;
   loadGroupsBtn.disabled=!wa.connected;
   importGroupBtn.disabled=!wa.connected||!groupSelect.value;
 
@@ -38,7 +42,33 @@ async function refresh(){try{renderState(await api('/api/status'))}catch(e){stat
 message.addEventListener('input',()=>charCount.textContent=message.value.length);
 groupSelect.addEventListener('change',()=>{importGroupBtn.disabled=!groupSelect.value});
 
-reconnectBtn.addEventListener('click',async()=>{reconnectBtn.disabled=true;reconnectBtn.textContent='Reiniciando...';try{await api('/api/whatsapp/reconnect',{method:'POST'});setTimeout(refresh,1000)}catch(e){waStatus.textContent=e.message}finally{setTimeout(()=>{reconnectBtn.disabled=false;reconnectBtn.textContent='Gerar novo QR'},2500)}});
+reconnectBtn.addEventListener('click',async()=>{
+  reconnectBtn.disabled=true;reconnectBtn.textContent='Reconectando...';
+  try{const d=await api('/api/whatsapp/reconnect',{method:'POST'});renderState(d.state);setTimeout(refresh,1200)}
+  catch(e){waStatus.textContent=e.message}
+  finally{setTimeout(()=>{reconnectBtn.disabled=false;reconnectBtn.textContent='Reconectar'},2500)}
+});
+
+disconnectBtn.addEventListener('click',async()=>{
+  if(!confirm('Desconectar o WhatsApp deste painel?\n\nA sessão salva será mantida e você poderá reconectar depois sem trocar o número.'))return;
+  disconnectBtn.disabled=true;disconnectBtn.textContent='Desconectando...';
+  try{const d=await api('/api/whatsapp/disconnect',{method:'POST'});renderState(d.state)}
+  catch(e){waStatus.textContent=e.message}
+  finally{disconnectBtn.textContent='Desconectar'}
+});
+
+changeNumberBtn.addEventListener('click',async()=>{
+  if(!confirm('Trocar o número conectado?\n\nIsso encerrará a sessão atual, apagará somente a autenticação deste WhatsApp e gerará um novo QR Code.'))return;
+  changeNumberBtn.disabled=true;changeNumberBtn.textContent='Trocando...';
+  try{
+    const d=await api('/api/whatsapp/change-number',{method:'POST'});
+    groupSelect.innerHTML='<option value="">Aguardando o novo WhatsApp</option>';
+    groupResult.classList.add('hidden');
+    renderState(d.state);
+    setTimeout(refresh,1200);
+  }catch(e){waStatus.textContent=e.message}
+  finally{setTimeout(()=>{changeNumberBtn.disabled=false;changeNumberBtn.textContent='Trocar número'},3000)}
+});
 
 loadGroupsBtn.addEventListener('click',async()=>{
   loadGroupsBtn.disabled=true; loadGroupsBtn.textContent='Carregando...'; groupSelect.innerHTML='<option value="">Carregando grupos...</option>';
